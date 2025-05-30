@@ -13,8 +13,8 @@ pip install PySide6
 pip install selenium
 pip install PyInstaller
 pip install PyPDF2
-pip install webdriver-manager # Para gerenciar automaticamente o driver do Chrome
-```
+pip install webdriver-manager
+pip install cryptography
 
 ## Explicação das bibliotecas adicionadas
 
@@ -23,10 +23,18 @@ selenium: Utilizada para automatizar a interação com o navegador web.
 PyInstaller: Usada para empacotar o script Python em um executável.
 PyPDF2: Necessária para ler os dados dos arquivos PDF.
 webdriver-manager: Facilita o gerenciamento do driver do Chrome, garantindo que a versão correta seja baixada automaticamente.
+cryptography: NOVA: Utilizada para criptografar e descriptografar de forma segura as credenciais de login para a funcionalidade "Lembre-me".
 
 ## Configuração
 
 Arquivos PDF: Certifique-se de que os arquivos PDF (fgts.pdf, estadual.pdf, tce.pdf, trabalhista.pdf, federal.pdf, municipal.pdf) estejam localizados na mesma pasta que o script main.py ou o executável gerado.
+
+Persistência de Login:
+
+Ao usar a funcionalidade "Lembre-me", dois novos arquivos serão criados na mesma pasta do executável/script:
+
+config.ini: Armazena o CPF e a senha criptografada.
+key.key: Armazena a chave de criptografia gerada. Não compartilhe ou exclua este arquivo, pois ele é essencial para descriptografar suas credenciais salvas.
 
 ## Como Executar
 
@@ -70,9 +78,11 @@ Execute o arquivo .exe e mova os arquivos em .pdf para dentro da pasta "_interna
 ## Este código Python automatiza a inserção de dados de certificados em um sistema web, agilizando o processo e reduzindo o risco de erros manuais. As principais funcionalidades incluem
 
 Interface Gráfica: Uma interface amigável construída com PySide6 permite ao usuário inserir as credenciais de login e selecionar os tipos de certificados a serem processados.
+Persistência de Credenciais ("Lembre-me"): Permite que o usuário salve seu CPF e senha de forma segura (criptografada) para que não precise inseri-los a cada nova execução do aplicativo.
 Login Automatizado: O script automatiza o processo de login no sistema web.
 Navegação Automatizada: O script navega automaticamente até a página de inserção de dados dos certificados.
 Extração de Dados dos PDFs: A biblioteca PyPDF2 é utilizada para extrair os dados relevantes (número do certificado, data de emissão, data de validade) dos arquivos PDF fornecidos.
+Gerenciamento Robusto de Arquivos: O aplicativo agora localiza arquivos PDF e de configuração de forma mais inteligente, funcionando de maneira consistente tanto como script Python quanto como executável PyInstaller (.exe).
 Inserção Automática de Dados: O script insere automaticamente os dados extraídos dos PDFs nos campos apropriados do sistema web.
 Suporte a Múltiplos Tipos de Certificados: O script suporta a inserção de dados para os seguintes tipos de certificados: FGTS, Estadual, TCE, Trabalhista, Federal e Municipal.
 Gerenciamento de Drivers: O webdriver-manager gerencia a instalação e atualização do driver do Chrome.
@@ -87,4 +97,4 @@ A velocidade da automação pode ser ajustada nas variáveis t1, t2 e t3 no arqu
 
 Contribuições são bem-vindas! Se você tiver sugestões de melhorias, correções de bugs ou novas funcionalidades, sinta-se à vontade para abrir um pull request.  
 
-## Trata-se de uma ferramenta para uso interno na organização, porém é possível usar com os conceitos empregados.
+## Criado para automação de tarefas organizacionais internas, este código-base demonstra padrões e técnicas reutilizáveis aplicáveis a cenários mais amplos de automação web e extração de dados.
