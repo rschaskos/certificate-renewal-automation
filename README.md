@@ -15,6 +15,7 @@ pip install PyInstaller
 pip install PyPDF2
 pip install webdriver-manager
 pip install cryptography
+```
 
 ## Explicação das bibliotecas adicionadas
 
@@ -41,13 +42,9 @@ key.key: Armazena a chave de criptografia gerada. Não compartilhe ou exclua est
 ## Opção 1: Executar o script diretamente
 
 Clone o repositório ou faça uma cópia do arquivo main.py em sua IDE favorita.
-
 Certifique-se de que todas as bibliotecas listadas em "Pré-requisitos" estejam instaladas.
-
 Execute o script. Na sua IDE, geralmente há um botão "Run" ou você pode usar o atalho de teclado apropriado.
-
 Se preferir executar pelo terminal, navegue até o diretório onde o arquivo main.py está localizado.
-
 Execute o script Python com o comando:
 	
 ```
@@ -60,7 +57,11 @@ Se você tiver o PyInstaller instalado, pode compilar o script em um executável
 Abra o terminal e navegue até o diretório do projeto.
 Execute o seguinte comando para compilar o script (ajuste o caminho se necessário):
 ```
+macOS
 pyinstaller --clean --onedir --noconsole --icon=src/favicon.ico main.py --add-data "src:src"
+
+Windows
+pyinstaller --clean --onedir --noconsole --icon=src/favicon.ico main.py --add-data "src;src"
 ```
 Explicação das opções do PyInstaller:
 --clean: Cria em executável limpo de caches
