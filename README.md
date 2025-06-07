@@ -20,10 +20,15 @@ pip install cryptography
 ## Explicação das bibliotecas adicionadas
 
 PySide6: Necessária para criar a interface gráfica do aplicativo.
+
 selenium: Utilizada para automatizar a interação com o navegador web.
+
 PyInstaller: Usada para empacotar o script Python em um executável.
+
 PyPDF2: Necessária para ler os dados dos arquivos PDF.
+
 webdriver-manager: Facilita o gerenciamento do driver do Chrome, garantindo que a versão correta seja baixada automaticamente.
+
 cryptography: NOVA: Utilizada para criptografar e descriptografar de forma segura as credenciais de login para a funcionalidade "Lembre-me".
 
 ## Configuração
@@ -79,14 +84,23 @@ Execute o arquivo .exe e mova os arquivos em .pdf para dentro da pasta "_interna
 ## Este código Python automatiza a inserção de dados de certificados em um sistema web, agilizando o processo e reduzindo o risco de erros manuais. As principais funcionalidades incluem
 
 Interface Gráfica: Uma interface amigável construída com PySide6 permite ao usuário inserir as credenciais de login e selecionar os tipos de certificados a serem processados.
+
 Persistência de Credenciais ("Lembre-me"): Permite que o usuário salve seu CPF e senha de forma segura (criptografada) para que não precise inseri-los a cada nova execução do aplicativo.
+
 Login Automatizado: O script automatiza o processo de login no sistema web.
+
 Navegação Automatizada: O script navega automaticamente até a página de inserção de dados dos certificados.
+
 Extração de Dados dos PDFs: A biblioteca PyPDF2 é utilizada para extrair os dados relevantes (número do certificado, data de emissão, data de validade) dos arquivos PDF fornecidos.
+
 Gerenciamento Robusto de Arquivos: O aplicativo agora localiza arquivos PDF e de configuração de forma mais inteligente, funcionando de maneira consistente tanto como script Python quanto como executável PyInstaller (.exe).
+
 Inserção Automática de Dados: O script insere automaticamente os dados extraídos dos PDFs nos campos apropriados do sistema web.
+
 Suporte a Múltiplos Tipos de Certificados: O script suporta a inserção de dados para os seguintes tipos de certificados: FGTS, Estadual, TCE, Trabalhista, Federal e Municipal.
+
 Gerenciamento de Drivers: O webdriver-manager gerencia a instalação e atualização do driver do Chrome.
+
 
 ## Observações
 
