@@ -3,42 +3,40 @@ import os
 import io
 import sys
 
-from pathlib import Path
 from PyPDF2 import PdfReader
-from patterns import *
-# from src.utils import constructedFilePath
-
-
-current = Path(__file__).parent
-parent = current.parent
-os.chdir(parent)
+from src.patterns import CERTIFICATE_PATTERNS
+from src.utils import constructedFilePath 
 
 class ReaderPDF():
     def __init__(self, pathFile):
         self.pathFile = pathFile
         self.data = self._readerData()
-        self.certiNumberFGTS = self._extractCertiNumberFGTS()
-        self.emitDateFGTS = self._extractEmitDateFGTS()
-        self.finalValidFGTS = self._extractFinalValidFGTS()
-        self.certiNumberESTADUAL = self._extractCertiNumberESTADUAL() 
-        self.emitDateESTADUAL = self._extractEmitDateESTADUAL()
-        self.finalValidESTADUAL = self._extractFinalValidESTADUAL()
-        self.certiNumberTCE = self._extractCertiNumberTCE() 
-        self.emitDateTCE = self._extractEmitDateTCE()
-        self.finalValidTCE = self._extractFinalValidTCE()
-        self.certiNumberTRABALHISTA = self._extractCertiNumberTRABALHISTA() 
-        self.emitDateTRABALHISTA = self._extractEmitDateTRABALHISTA()
-        self.finalValidTRABALHISTA = self._extractFinalValidTRABALHISTA()
-        self.certiNumberFEDERAL = self._extractCertiNumberFEDERAL() 
-        self.emitDateFEDERAL = self._extractEmitDateFEDERAL()
-        self.finalValidFEDERAL = self._extractFinalValidFEDERAL()
-        self.certiNumberMUNICIPAL = self._extractCertiNumberMUNICIPAL()
-        self.emitDateMUNICIPAL = self._extractEmitNumberMUNICIPAL()
-        self.finalValidMUNICIPAL = self._extractFinalNumberMUNICIPAL()
+
+        fileNameBase = os.path.basename(pathFile).split('.')[0].upper() 
+
+        if fileNameBase not in CERTIFICATE_PATTERNS:
+            self.certiNumber = None
+            self.emitDate = None
+            self.finalValid = None
+            self.extractedData = {} 
+            return 
+
+        patternsForType = CERTIFICATE_PATTERNS[fileNameBase]
+
+        # Extração dinâmica dos dados usando o método genérico
+        self.certiNumber = self._extractDataFromPattern(patternsForType.get('certiNumber'))
+        self.emitDate = self._extractDataFromPattern(patternsForType.get('emitDate'))
+        self.finalValid = self._extractDataFromPattern(patternsForType.get('finalValid'))
+
+        self.extractedData = {
+            'certiNumber': self.certiNumber,
+            'emitDate': self.emitDate,
+            'finalValid': self.finalValid
+        }
         
     def _readerData(self):
         data = ''
-        old_stderr = sys.stderr
+        oldStderr = sys.stderr
         sys.stderr = io.StringIO()
 
         try:
@@ -47,141 +45,64 @@ class ReaderPDF():
                 for row in reader.pages:
                     data += row.extract_text()
         except FileNotFoundError:
-            ...
-            # print(f'Erro - arquivo não encontrado: {self.pathFile}')
-            # print('Coloque os arquivos na mesma pasta do programa.')
+            print(f"Erro: Arquivo PDF não encontrado em {self.pathFile}")
+        except Exception as e:
+            print(f"Erro ao ler PDF {self.pathFile}: {e}")
         finally:
-            sys.stderr = old_stderr
+            sys.stderr = oldStderr
         return data
-    
 
-    # FGTS EXTRACTION
-    def _extractCertiNumberFGTS(self):
-        pattern_match = re.search(FGTS_PATTERN_CERTI, self.data)
+    # NOVO método genérico para extração de dados
+    def _extractDataFromPattern(self, pattern):
+        if not pattern: 
+            return None
+        pattern_match = re.search(pattern, self.data)
         if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractEmitDateFGTS(self):
-        pattern_match = re.search(FGTS_PATTERN_EMIT, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-        
-    def _extractFinalValidFGTS(self):
-        pattern_match = re.search(FGTS_PATTERN_VALID, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-
-    # ESTADUAL EXTRACTION   
-    def _extractCertiNumberESTADUAL(self):
-        pattern_match = re.search(ESTADUAL_PATTERN_CERTI, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractEmitDateESTADUAL(self):
-        pattern_match = re.search(ESTADUAL_PATTERN_EMIT, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractFinalValidESTADUAL(self):
-        pattern_match = re.search(ESTADUAL_PATTERN_VALID, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    
-    # TCE EXTRACTION   
-    def _extractCertiNumberTCE(self):
-        pattern_match = re.search(TCE_PATTERN_CERTI, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractEmitDateTCE(self):
-        pattern_match = re.search(TCE_PATTERN_EMIT, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractFinalValidTCE(self):
-        pattern_match = re.search(TCE_PATTERN_VALID, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-
-    # TRABALHISTA EXTRACTION   
-    def _extractCertiNumberTRABALHISTA(self):
-        pattern_match = re.search(TRABALHISTA_PATTERN_CERTI, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractEmitDateTRABALHISTA(self):
-        pattern_match = re.search(TRABALHISTA_PATTERN_EMIT, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractFinalValidTRABALHISTA(self):
-        pattern_match = re.search(TRABALHISTA_PATTERN_VALID, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
+            return pattern_match.group(1).strip() 
         return None
 
+if __name__ == '__main__':
+    
+    fileFgts = constructedFilePath('fgts.pdf')
+    readerFgts = ReaderPDF(fileFgts)
+    if readerFgts.certiNumber: 
+        print(f"FGTS - Número: {readerFgts.certiNumber}, Emissão: {readerFgts.emitDate}, Validade: {readerFgts.finalValid}")
+    else:
+        print(f"Não foi possível extrair dados do FGTS.pdf")
 
-    # FEDERAL EXTRACTION   
-    def _extractCertiNumberFEDERAL(self):
-        pattern_match = re.search(FEDERAL_PATTERN_CERTI, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractEmitDateFEDERAL(self):
-        pattern_match = re.search(FEDERAL_PATTERN_EMIT, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractFinalValidFEDERAL(self):
-        pattern_match = re.search(FEDERAL_PATTERN_VALID, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
+    fileTce = constructedFilePath('tce.pdf') 
+    readerTce = ReaderPDF(fileTce)
+    if readerTce.certiNumber:
+        print(f"TCE - Número: {readerTce.certiNumber}, Emissão: {readerTce.emitDate}, Validade: {readerTce.finalValid}")
+    else:
+        print(f"Não foi possível extrair dados do TCE.pdf")
 
-    # MUNICIPAL EXTRACTION   
-    def _extractCertiNumberMUNICIPAL(self):
-        pattern_match = re.search(MUNICIPAL_PATTERN_CERTI, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractEmitNumberMUNICIPAL(self):
-        pattern_match = re.search(MUNICIPAL_PATTERN_EMIT, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None
-    
-    def _extractFinalNumberMUNICIPAL(self):
-        pattern_match = re.search(MUNICIPAL_PATTERN_VALID, self.data)
-        if pattern_match:
-            return pattern_match.group(1)
-        return None 
-    
+    fileEstadual = constructedFilePath('estadual.pdf') 
+    readerEstadual = ReaderPDF(fileEstadual)
+    if readerEstadual.certiNumber:
+        print(f"ESTADUAL - Número: {readerEstadual.certiNumber}, Emissão: {readerEstadual.emitDate}, Validade: {readerEstadual.finalValid}")
+    else:
+        print(f"Não foi possível extrair dados do ESTADUAL.pdf")
 
-if __name__ == '__main__':    
-    # file = constructedFilePath('municipal.pdf') 
-    file = 'fgts.pdf'
-    r1 = ReaderPDF(file)
+    fileFederal = constructedFilePath('federal.pdf')
+    readerFederal = ReaderPDF(fileFederal)
+    if readerFederal.certiNumber:
+        print(f'FEDERAL - Número: {readerFederal.certiNumber}, Emissãõ: {readerFederal.emitDate}, Validade: {readerFederal.finalValid}')
+    else:
+        print(f"Não foi possível extrair dados do FEDERAL.pdf")
 
-    # print(r1.data)
-    print(f'Número da Certidão: {r1.certiNumberFGTS}')
-    print(f'Data de emissão: {r1.emitDateFGTS}')
-    print(f'Validade Final: {r1.finalValidFGTS}')
+    fileTrabalhista = constructedFilePath('federal.pdf')
+    readerTrabalhista = ReaderPDF(fileTrabalhista)
+    if readerTrabalhista.certiNumber:
+        print(f'TRABALHISTA - Número: {readerTrabalhista.certiNumber}, Emissãõ: {readerTrabalhista.emitDate}, Validade: {readerTrabalhista.finalValid}')
+    else:
+        print(f"Não foi possível extrair dados do TRABALHISTA.pdf")
 
+    fileMunicipal = constructedFilePath('Municipal.pdf')
+    readerMunicipal = ReaderPDF(fileMunicipal)
+    if readerMunicipal.certiNumber:
+        print(f'MUNICIPAL - Número: {readerMunicipal.certiNumber}, Emissãõ: {readerMunicipal.emitDate}, Validade: {readerMunicipal.finalValid}')
+    else:
+        print(f"Não foi possível extrair dados do MUNICIPAL.pdf")
+
+   

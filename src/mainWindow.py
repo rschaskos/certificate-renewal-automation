@@ -4,256 +4,318 @@ import configparser
 import re
 
 from pathlib import Path
-from PySide6.QtWidgets import QMainWindow, QApplication, QWidget, QMessageBox
-from PySide6.QtCore import QEvent, Signal, Slot
-from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QMainWindow, QApplication, QWidget, QMessageBox, QCheckBox, QLabel, QVBoxLayout
+from PySide6.QtCore import QEvent, Signal, Slot, QThread, QTimer, Qt, QObject
+from PySide6.QtGui import QIcon, QScreen # QScreen é importado mas não usado, pode ser removido
+
 from src.sitLogin import Ui_MainWindow
 from src.sitAbout import Ui_Form
 from src.sitCheckBox import Ui_CheckBox
 from cryptography.fernet import Fernet
 from src.utils import constructedFilePath
+from src.automaWeb import TCEPRBot
 
+# --- Variáveis de Configuração ---
+CONFIG_FILE = 'config.ini'
+KEY_FILE = 'key.key'
+# --- Fim das Variáveis de Configuração ---
 
-# --- Variáveis para persistência ---
-CONFIG_FILE = 'config.ini' # Nome do arquivo de configuração
-KEY_FILE = 'key.key' # Nome do arquivo da chave de criptografia
-# --- Fim das variáveis para persistência ---
+# --- Classe: TemporaryMessageWindow ---
+class TemporaryMessageWindow(QWidget):
+    def __init__(self, message, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.SplashScreen |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
-# --- INÍCIO DAS CLASSES AUXILIARES (MOVIDAS PARA CIMA) ---
+        layout = QVBoxLayout(self)
+        label = QLabel(message, self)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("font-size: 16px; padding: 20px; background-color: #333; color: white; border-radius: 10px;")
+        layout.addWidget(label)
+        self.setLayout(layout)
 
+        self.adjustSize()
+        self.centerOnScreen()
+
+    def centerOnScreen(self):
+        screen_geometry = QApplication.primaryScreen().geometry()
+        x = (screen_geometry.width() - self.width()) // 2
+        y = (screen_geometry.height() - self.height()) // 2
+        self.move(x, y)
+
+    def show_and_auto_close(self, duration_ms):
+        self.show()
+        QTimer.singleShot(duration_ms, self.close)
+
+# --- Classe: AutomationWorker ---
+class AutomationWorker(QObject):
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, bot_instance, userLogin, passLogin, sitNumber, selectedFiles, parent=None):
+        super().__init__(parent)
+        self.bot = bot_instance
+        self.userLogin = userLogin
+        self.passLogin = passLogin
+        self.sitNumber = sitNumber
+        self.selectedFiles = selectedFiles
+
+    @Slot()
+    def run(self):
+        try:
+            # Garante que a instância do bot tem os dados mais recentes para esta automação.
+            self.bot.user = self.userLogin
+            self.bot.passwd = self.passLogin
+            self.bot.sitNumber = self.sitNumber
+            self.bot.selectedFiles = self.selectedFiles
+
+            if self.bot.browser is None:
+                # Primeira automação: Lança navegador e faz login
+                self.bot.launchBrowser()
+            else:
+                # Automações subsequentes: navegador já está aberto e logado.
+                # Reutiliza o navegador e executa a navegação e preenchimento para o novo SIT.
+                self.bot._navegate()
+
+            self.finished.emit()
+        except Exception as e:
+            # Captura erros da automação e os envia para a thread principal
+            self.error.emit(f"Erro na automação: {e}")
+            self.finished.emit()
+
+# --- Classe: AboutWindow ---
 class AboutWindow(QWidget, Ui_Form):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
 
-class _CheckBox(QWidget, Ui_CheckBox):
-    automationData = Signal(str, str, str, list) # Sinal que emite user, pass, sitNumber, selectedFiles
+# --- Classe: _CheckBox (Renomeada para CheckBoxWindow para melhor clareza) ---
+class CheckBoxWindow(QWidget, Ui_CheckBox): # Alterado de _CheckBox para CheckBoxWindow
+    closed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
 
-        self.pushLimpar.clicked.connect(self.clearFields) # Quando clicar em Limpar
-        self.pushIniciar.clicked.connect(self.validateAll) # Quando clicar em Iniciar
-        self.lineEdit.returnPressed.connect(self.validateAll) # Quando enter for pressionado
-        self.mainWindow = None
+        self.pushLimpar.clicked.connect(self.clearFields)
+        self.pushIniciar.clicked.connect(self.validateAll)
+        self.lineEdit.returnPressed.connect(self.validateAll)
+        self.mainWindow = None # Será definida pela MainWindow
+
+        self.checkbox_map = {
+            self.checkBoxFgts: 'fgts.pdf',
+            self.checkBoxMunicipal: 'municipal.pdf',
+            self.checkBoxEstadual: 'estadual.pdf',
+            self.checkBoxTce: 'tce.pdf',
+            self.checkBoxTrabalhista: 'trabalhista.pdf',
+            self.checkBoxFederal: 'federal.pdf'
+        }
 
     def setMainWindow(self, main_window):
         self.mainWindow = main_window
 
-    # Método que limpa o checkbox e lineEdit
     def clearFields(self):
-        self.checkBoxFgts.setChecked(False)
-        self.checkBoxEstadual.setChecked(False)
-        self.checkBoxTce.setChecked(False)
-        self.checkBoxTrabalhista.setChecked(False)
-        self.checkBoxFederal.setChecked(False)
-        self.checkBoxMunicipal.setChecked(False)
-
         self.lineEdit.clear()
-
-    # Quando a janela checkbox for fechada
-    def closeEvent(self, event):
-        self.clearFields()
-        event.accept()
+        for checkbox in self.checkbox_map.keys():
+            checkbox.setChecked(False)
 
     def validateAll(self):
         sitNumber = self.lineEdit.text().strip()
+        selectedFiles = []
+        missedFiles = []
+        found_all_selected = True
 
         if not sitNumber:
-            QMessageBox.warning(
-                self,
-                'Aviso',
-                'Digite o número SIT.'
+            QMessageBox.warning(self, 'Erro', 'O campo "Nº SIT" não pode estar vazio.')
+            return
+
+        for checkbox, file_name in self.checkbox_map.items():
+            if checkbox.isChecked():
+                selectedFiles.append(file_name)
+                file_path = constructedFilePath(file_name)
+                if not os.path.exists(file_path):
+                    missedFiles.append(file_name)
+                    found_all_selected = False
+
+        if not selectedFiles:
+            QMessageBox.warning(self, 'Erro', 'Nenhum certificado selecionado. Por favor, marque ao menos um.')
+            return
+
+        if not found_all_selected:
+            msg = "Os seguintes arquivos não foram encontrados:\n" + "\n".join(missedFiles) + "\n\nPor favor, verifique se eles estão na pasta correta."
+            QMessageBox.critical(self, 'Arquivos Ausentes', msg)
+            return
+
+        self.hide() # Esconde a janela de seleção enquanto a automação roda
+
+        # Mostra a mensagem temporária de "Iniciando automação"
+        self.temp_msg_window = TemporaryMessageWindow("Iniciando automação, por favor, aguarde...", self.mainWindow)
+        self.temp_msg_window.show_and_auto_close(3000) # Exibe por 3 segundos
+
+        # Prepara e inicia a automação em uma nova thread
+        self.thread = QThread()
+
+        # Garante que a instância do bot existe na MainWindow. Se ainda não existe, cria.
+        # Isso é crucial para persistir a instância do browser.
+        if self.mainWindow.bot is None:
+            # Inicializa o bot com dados vazios, pois eles serão atualizados pelo worker antes da execução.
+            self.mainWindow.bot = TCEPRBot(
+                self.mainWindow.userLogin,
+                self.mainWindow.passLogin,
+                "", # sitNumber inicial vazio
+                []  # selectedFiles inicial vazio
             )
-            return False
 
-        keywords = {
-            'fgts': 'fgts',
-            'estadual': 'estadual',
-            'tce': 'tce',
-            'trabalhista': 'trabalhista',
-            'federal': 'federal',
-            'municipal': 'municipal'
-        }
+        # Cria o worker, passando a instância do bot e os dados da automação
+        self.worker = AutomationWorker(
+            self.mainWindow.bot,
+            self.mainWindow.userLogin,
+            self.mainWindow.passLogin,
+            sitNumber, # SIT Number atual para esta execução
+            selectedFiles # Arquivos selecionados para esta execução
+        )
+        self.worker.moveToThread(self.thread)
 
-        found_files = {}
+        # Conecta os sinais e slots para gerenciar a thread
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
 
-        exec_dir = constructedFilePath('')
+        self.worker.error.connect(self.handleAutomationError)
+        # Reexibe a janela de seleção após a thread terminar (sucesso ou erro)
+        self.thread.finished.connect(self.show)
 
-        try:
-            if getattr(sys, 'frozen', False):
-                available_files = [f for f in os.listdir(os.getcwd()) if f.lower().endswith('.pdf')]
-            else:
-                available_files = [f for f in os.listdir(exec_dir) if f.lower().endswith('.pdf')]
+        self.thread.start() # Inicia a thread
 
-            for keyword_type, keyword_name in keywords.items():
-                for file_name in available_files:
-                    pattern = re.compile(r'^{}.*\.pdf$'.format(re.escape(keyword_name)), re.IGNORECASE)
-                    full_file_path = constructedFilePath(file_name)
+    @Slot(str)
+    def handleAutomationError(self, error_message):
+        QMessageBox.critical(self, 'Erro na Automação', error_message)
 
-                    if pattern.match(file_name) and os.path.exists(full_file_path):
-                        found_files[keyword_type] = file_name
-                        break
+    def closeEvent(self, event):
+        # Emite um sinal para a MainWindow saber que esta janela foi fechada
+        self.closed.emit()
+        event.accept()
 
-        except Exception as e:
-            QMessageBox.critical(self, 'Erro', f'Erro ao listar arquivos PDF: {e}')
-            return False
-
-        missedFiles = []
-        selected_keywords = []
-
-        if self.checkBoxFgts.isChecked():
-            selected_keywords.append('fgts')
-        if self.checkBoxEstadual.isChecked():
-            selected_keywords.append('estadual')
-        if self.checkBoxTce.isChecked():
-            selected_keywords.append('tce')
-        if self.checkBoxTrabalhista.isChecked():
-            selected_keywords.append('trabalhista')
-        if self.checkBoxFederal.isChecked():
-            selected_keywords.append('federal')
-        if self.checkBoxMunicipal.isChecked():
-            selected_keywords.append('municipal')
-
-        if not selected_keywords:
-            QMessageBox.warning(
-                self,
-                'Aviso',
-                'Selecione pelo menos um arquivo para prosseguir.'
-            )
-            return False
-
-        for keyword in selected_keywords:
-            if keyword not in found_files:
-                missedFiles.append(f'{keywords[keyword]}.pdf (ou variações)')
-
-        if missedFiles:
-            errorMessage = "Os seguintes tipos de arquivos selecionados não foram encontrados na pasta:\n"
-            for file in missedFiles:
-                errorMessage += f'- {file}\n'
-            QMessageBox.critical(self, 'Erro de arquivo', errorMessage)
-            return False
-        else:
-            if self.mainWindow:
-                self.automationData.emit(
-                    self.mainWindow.userLogin,
-                    self.mainWindow.passLogin,
-                    sitNumber,
-                    [found_files[k] for k in selected_keywords]
-                )
-            return True
-
-# --- FIM DAS CLASSES AUXILIARES ---
-
+# --- Classe Principal: MainWindow ---
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        self.setWindowTitle('SIT - Automação')
+        
+        self.cipher_suite = None
+        self._load_or_generate_key()
 
+        self.userLogin = ''
+        self.passLogin = ''
+        self.bot = None # Instância do TCEPRBot será criada aqui ou no CheckBoxWindow
+
+        # Instanciação das janelas auxiliares
         self.aboutWindow = AboutWindow()
-        self.toolButton.clicked.connect(self.openAboutWindow) # Quando clicar em toolButton
+        # Usa o nome de classe ajustado
+        self.checkBoxWindow = CheckBoxWindow()
+        self.checkBoxWindow.setMainWindow(self)
+        self.checkBoxWindow.closed.connect(self.show) # Conecta o fechamento da CheckBoxWindow para mostrar a MainWindow
 
-        self.checkBoxWindow = _CheckBox()
+        try:
+            self.pushEntrar.clicked.connect(self.processLogin)
+        except AttributeError:
+            QMessageBox.critical(self, 'Erro de Configuração da UI',
+                                 "Não foi possível encontrar o botão de login 'pushEntrar'. "
+                                 "Verifique o nome do objeto no seu arquivo sitLogin.ui.")
+            sys.exit(1)
 
-        # Conectando o sinal da checkBoxWindow ao slot da MainWindow
-        self.checkBoxWindow.automationData.connect(self.startAutomation)
+        # Verifica se o checkbox 'Lembrar' existe na UI
+        if not hasattr(self, 'checkBoxRememberMe'):
+            print("Aviso: 'checkBoxRememberMe' (checkbox 'Lembre-me') não encontrado na UI. A funcionalidade de lembrar credenciais pode não funcionar.")
 
-        # --- CORREÇÃO AQUI: Conectar ao processLogin em vez de openCheckBoxWindow ---
-        self.pushEntrar.clicked.connect(self.processLogin)
-        self.lineCpf.returnPressed.connect(self.processLogin)
-        self.linePass.returnPressed.connect(self.processLogin)
-        # --- Fim da correção ---
+        # Verifica se o botão 'Sobre' existe na UI
+        if hasattr(self, 'toolButton'):
+            self.toolButton.setText('Sobre')
+            self.toolButton.clicked.connect(self.showAbout)
+        else:
+            print("Aviso: 'toolButton' não encontrado na UI. O botão 'Sobre' não estará funcional.")
 
-        self.userLogin = None
-        self.passLogin = None
-        self.bot = None # Armazena a instância de TCEPRBot
+        # Carrega credenciais ao iniciar a aplicação
+        self._load_credentials()
 
-
-        # --- Adições para "Lembre-me" ---
-        self.config = configparser.ConfigParser()
-        self.fernet_key = self._load_or_generate_key()
-        self.cipher_suite = Fernet(self.fernet_key)
-
-        self._load_credentials() # Carrega credenciais ao iniciar
-        # --- Fim das adições ---
-
-    # --- Funções de Criptografia/Descriptografia e Gerenciamento de Chave ---
     def _load_or_generate_key(self):
         key_path = constructedFilePath(KEY_FILE)
         if os.path.exists(key_path):
-            with open(key_path, 'rb') as kf:
-                return kf.read()
+            with open(key_path, 'rb') as key_file:
+                key = key_file.read()
         else:
             key = Fernet.generate_key()
-            try:
-                with open(key_path, 'wb') as kf:
-                    kf.write(key)
-            except IOError as e:
-                QMessageBox.critical(self, 'Erro', f'Não foi possível salvar a chave de criptografia: {e}')
-            return key
+            with open(key_path, 'wb') as key_file:
+                key_file.write(key)
+        self.cipher_suite = Fernet(key)
 
-    def _encrypt_data(self, data):
-        return self.cipher_suite.encrypt(data.encode()).decode()
-
-    def _decrypt_data(self, encrypted_data):
-        try:
-            return self.cipher_suite.decrypt(encrypted_data.encode()).decode()
-        except Exception as e:
-            return ""
-
-    def _save_credentials(self):
+    def _save_credentials(self, remember_me_checked):
         config_path = constructedFilePath(CONFIG_FILE)
+        config = configparser.ConfigParser()
 
-        self.config.read(config_path)
+        if os.path.exists(config_path):
+            config.read(config_path)
 
-        if not self.config.has_section('Login'):
-            self.config.add_section('Login')
+        if 'Credentials' not in config:
+            config['Credentials'] = {}
 
-        if self.checkBoxRememberMe.isChecked():
-            self.config.set('Login', 'username', self.lineCpf.text())
-            encrypted_password = self._encrypt_data(self.linePass.text())
-            self.config.set('Login', 'password', encrypted_password)
-            self.config.set('Login', 'remember_me', 'True')
+        if remember_me_checked:
+            encrypted_user = self.cipher_suite.encrypt(self.userLogin.encode()).decode()
+            encrypted_pass = self.cipher_suite.encrypt(self.passLogin.encode()).decode()
+
+            config['Credentials']['username'] = encrypted_user
+            config['Credentials']['password'] = encrypted_pass
+            config['Credentials']['remember_me'] = 'True'
         else:
-            if self.config.has_option('Login', 'username'):
-                self.config.remove_option('Login', 'username')
-            if self.config.has_option('Login', 'password'):
-                self.config.remove_option('Login', 'password')
-            self.config.set('Login', 'remember_me', 'False')
+            # Se 'Lembre-me' não estiver marcado ou foi desmarcado, limpe as credenciais
+            if 'Credentials' in config:
+                del config['Credentials']
 
-        try:
-            with open(config_path, 'w') as configfile:
-                self.config.write(configfile)
-        except IOError as e:
-            QMessageBox.critical(self, 'Erro ao Salvar', f'Não foi possível salvar as configurações: {e}')
-
+        with open(config_path, 'w') as configfile:
+            config.write(configfile)
 
     def _load_credentials(self):
         config_path = constructedFilePath(CONFIG_FILE)
+        config = configparser.ConfigParser()
         if os.path.exists(config_path):
-            self.config.read(config_path)
-            if self.config.has_section('Login') and self.config.getboolean('Login', 'remember_me', fallback=False):
-                username = self.config.get('Login', 'username', fallback='')
-                encrypted_password = self.config.get('Login', 'password', fallback='')
+            config.read(config_path)
+            if 'Credentials' in config:
+                try:
+                    encrypted_user = config['Credentials'].get('username')
+                    encrypted_pass = config['Credentials'].get('password')
+                    remember_me_state = config['Credentials'].get('remember_me', 'False')
 
-                self.lineCpf.setText(username)
+                    if encrypted_user:
+                        self.userLogin = self.cipher_suite.decrypt(encrypted_user.encode()).decode()
+                        self.lineCpf.setText(self.userLogin)
+                    if encrypted_pass:
+                        self.passLogin = self.cipher_suite.decrypt(encrypted_pass.encode()).decode()
+                        self.linePass.setText(self.passLogin)
 
-                decrypted_password = self._decrypt_data(encrypted_password)
-                self.linePass.setText(decrypted_password)
+                    if self.userLogin and self.passLogin and remember_me_state == 'True' and hasattr(self, 'checkBoxRememberMe'):
+                        self.checkBoxRememberMe.setChecked(True)
+                    elif hasattr(self, 'checkBoxRememberMe'):
+                        self.checkBoxRememberMe.setChecked(False)
 
-                self.checkBoxRememberMe.setChecked(True)
+                except Exception as e:
+                    QMessageBox.warning(self, 'Erro de Criptografia', f'Não foi possível descriptografar as credenciais salvas. Erro: {e}. As credenciais foram limpas.')
+                    self.lineCpf.clear()
+                    self.linePass.clear()
+                    if hasattr(self, 'checkBoxRememberMe'):
+                        self.checkBoxRememberMe.setChecked(False)
+                    if os.path.exists(config_path):
+                        os.remove(config_path)
             else:
-                self.checkBoxRememberMe.setChecked(False)
-        else:
-            self.checkBoxRememberMe.setChecked(False)
+                if hasattr(self, 'checkBoxRememberMe'):
+                    self.checkBoxRememberMe.setChecked(False)
 
-    def _toggle_remember_me(self, state):
-        pass
-
-    # --- Fim das Funções de Criptografia/Descriptografia e Gerenciamento de Chave ---
-
-    def openAboutWindow(self):
+    def showAbout(self):
         self.aboutWindow.show()
 
     def showEvent(self, event):
@@ -264,41 +326,45 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.userLogin = self.lineCpf.text().strip()
         self.passLogin = self.linePass.text().strip()
 
-        cpfLen = len(self.userLogin)
-
         if not self.userLogin or not self.passLogin:
             QMessageBox.warning(self, 'Erro de Login', 'Por favor, insira CPF e Senha.')
             return False
 
-        if cpfLen != 11:
-            QMessageBox.warning(self, 'SIT', 'CPF inválido. O CPF deve conter 11 dígitos.')
+        if not re.fullmatch(r'\d{11}', self.userLogin):
+            QMessageBox.warning(self, 'SIT', 'CPF inválido. O CPF deve conter exatamente 11 dígitos numéricos.')
             return False
 
-        self._save_credentials()
+        remember_me = False
+        if hasattr(self, 'checkBoxRememberMe') and isinstance(self.checkBoxRememberMe, QCheckBox):
+            remember_me = self.checkBoxRememberMe.isChecked()
+
+        self._save_credentials(remember_me)
 
         self.openCheckBoxWindow()
         return True
 
     def openCheckBoxWindow(self):
-        self.checkBoxWindow.setMainWindow(self)
         self.checkBoxWindow.show()
+        self.hide()
 
-    @Slot(str, str, str, list)
-    def startAutomation(self, userLogin, passLogin, sitNumber, selectedFiles):
-        from src.automaWeb import TCEPRBot
-        if self.bot is None:
-            self.bot = TCEPRBot(userLogin, passLogin, sitNumber, selectedFiles)
-            self.bot.launchBrowser()
-        else:
-            self.bot.sitNumber = sitNumber
-            self.bot.selectedFiles = selectedFiles
-            self.bot._navegate()
-            self.bot.certificateSelection(selectedFiles)
+    # O método startAutomation na MainWindow NÃO é mais necessário
+    # pois a automação é iniciada diretamente do _CheckBox.validateAll()
+    # via QThread, usando a instância do bot gerenciada pela MainWindow.
+    # Removido:
+    # @Slot(str, str, str, list)
+    # def startAutomation(self, userLogin, passLogin, sitNumber, selectedFiles):
+    #     # ... lógica anterior ...
 
+    def closeEvent(self, event):
+        # Garante que o navegador Selenium seja fechado ao fechar a aplicação
+        if self.bot and self.bot.browser: # Verifica se o bot e o browser existem
+            self.bot.quit_browser() # Assumindo que TCEPRBot.quit_browser() existe
+        super().closeEvent(event)
+        event.accept()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon('favicon.ico'))
-    mainWindow = MainWindow()
-    mainWindow.show()
+    app.setStyle('Fusion')
+    window = MainWindow()
+    window.show()
     sys.exit(app.exec())

@@ -44,6 +44,14 @@ class Ui_Form(object):
 
     def retranslateUi(self, Form):
         Form.setWindowTitle(QCoreApplication.translate("Form", u"About", None))
-        self.labelAbout.setText(QCoreApplication.translate("Form", u"<html><head/><body><p>Nome do Programa: Atualizador de Certid\u00f5es</p><p>Vers\u00e3o: 1.0.0 </p><p>Descri\u00e7\u00e3o: Este programa foi desenvolvido para realizar tarefas repetitivas no SIT.</p><p>Desenvolvedor: Roney Schaskos </p><p>Data de Lan\u00e7amento: maio de 2025</p><p>Tecnologias Utilizadas: Python, PySide6</p></body></html>", None))
+        self.labelAbout.setText(QCoreApplication.translate("Form",
+    u"<html><head/><body>"
+    u"<p>Nome do Programa: Atualizador de Certidões</p>"
+    u"<p>Versão: 2.0 </p>"
+    u"<p>Descrição: Este programa foi desenvolvido para realizar tarefas repetitivas no SIT.</p>"
+    u"<p>Desenvolvedor: Roney Schaskos </p>"
+    u"<p>Data de Lançamento: maio de 2025</p>"
+    u"<p>Tecnologias Utilizadas: Python, PySide6</p>"
+    u"</body></html>", None))
     # retranslateUi
 
